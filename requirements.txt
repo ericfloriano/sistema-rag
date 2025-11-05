@@ -1,0 +1,27 @@
+# Framework principal
+langchain
+langchain-google-genai
+langchain-openai
+langchain-community
+langchain-huggingface
+langchain-chroma
+
+# Banco de Vetores
+chromadb
+
+# Modelo de Embeddings
+sentence-transformers
+
+# Carregadores de Documentos
+pypdf
+python-docx
+unstructured
+
+# Variáveis de Ambiente
+python-dotenv
+
+# Cenário 1: Telegram
+python-telegram-bot
+
+# Cenário 2: Streamlit
+streamlit

@@ -1,0 +1,13 @@
+# Ambiente Virtual
+venv/
+__pycache__/
+
+# Segredos
+.env
+
+# Arquivos de Sistema
+.DS_Store
+*.pyc
+
+# Ignora o banco de dados local
+chroma_db/

@@ -90,7 +90,7 @@ def run_ingestion():
             time.sleep(1) # Pausa de 1 segundo para não sobrecarregar a API
         
         print("Persistindo o banco de dados no disco...")
-        db.persist()
+        # db.persist()
         
         # 3. Crie o "arquivo de sucesso"
         with open(SUCCESS_FLAG_FILE, "w") as f:

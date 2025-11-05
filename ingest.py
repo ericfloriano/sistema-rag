@@ -1,11 +1,17 @@
 import os
+from dotenv import load_dotenv
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+# --- MUDANÇA AQUI ---
+from langchain_google_genai import GoogleGenerativeAIEmbeddings # Importa o modelo do Google
 
+# Carrega as chaves (necessário para o Google API Key)
+load_dotenv()
+
+# Caminho para os documentos e para o banco de vetores (agora no disco persistente)
 SOURCE_DIRECTORY = "documentos_fonte"
-PERSIST_DIRECTORY = "/var/data/chroma_db"
+PERSIST_DIRECTORY = "/var/data/chroma_db" # Caminho do Render
 
 def run_ingestion():
     """
@@ -49,11 +55,19 @@ def run_ingestion():
         chunks = text_splitter.split_documents(documentos)
         print(f"Sucesso: {len(chunks)} chunks criados.")
 
-        print("Carregando modelo de embeddings (all-MiniLM-L6-v2)...")
-        embeddings_model = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={"device": "cpu"},
+        # --- MUDANÇA PRINCIPAL AQUI ---
+        print("Carregando modelo de embeddings (Google API)...")
+        # Verifica se a chave foi carregada
+        if not os.getenv("GOOGLE_API_KEY"):
+            msg = "ERRO: GOOGLE_API_KEY não encontrada. Verifique as variáveis de ambiente."
+            print(msg)
+            return False, msg
+            
+        embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001",
+            google_api_key=os.getenv("GOOGLE_API_KEY")
         )
+        # --- FIM DA MUDANÇA ---
 
         print(f"Criando e persistindo banco de vetores em '{PERSIST_DIRECTORY}'...")
         db = Chroma.from_documents(
@@ -73,7 +87,6 @@ def run_ingestion():
         traceback.print_exc() # Imprime o stack trace completo no log
         return False, msg
 
-# Permite que o script ainda seja executável com "python ingest.py"
 if __name__ == "__main__":
     success, message = run_ingestion()
     if success:

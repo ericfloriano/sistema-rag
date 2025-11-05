@@ -9,9 +9,6 @@ langchain-chroma
 # Banco de Vetores
 chromadb
 
-# Modelo de Embeddings
-sentence-transformers
-
 # Carregadores de Documentos
 pypdf
 python-docx

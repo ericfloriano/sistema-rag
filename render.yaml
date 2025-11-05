@@ -13,12 +13,11 @@ services:
     envVars:
       - key: PORT
         value: 10000
-    envVarGroups:
-      - api_key_rag # <-- SEM 'name:', apenas o nome do grupo
+      - fromGroup: api_key_rag # <-- CORREÇÃO: use 'fromGroup' em vez de 'envVarGroups'
     disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db
-      sizeGB: 1 # <-- ADICIONE sizeGB aqui também
+      sizeGB: 1
     autoDeploy: true
 
   # Serviço 2: O Bot do Telegram
@@ -30,10 +29,10 @@ services:
     branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python telegram_bot.py
-    envVarGroups:
-      - api_key_rag # <-- SEM 'name:', apenas o nome do grupo
+    envVars:
+      - fromGroup: api_key_rag # <-- CORREÇÃO: use 'fromGroup' em vez de 'envVarGroups'
     disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db
-      sizeGB: 1 # <-- ADICIONE sizeGB aqui também
+      sizeGB: 1
     autoDeploy: true

@@ -23,7 +23,7 @@ def initialize_database():
         if success:
             st.success(f"Base de conhecimento criada! {message}")
             time.sleep(2)
-            st.rerun() # Recarrega a página agora que o DB existe
+            # st.rerun() # Recarrega a página agora que o DB existe
         else:
             # SE FALHAR, VAI MOSTRAR O ERRO NA TELA!
             st.error(f"Falha ao criar a base de conhecimento: {message}")

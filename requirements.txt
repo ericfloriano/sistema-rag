@@ -21,3 +21,6 @@ python-telegram-bot
 
 # Cenário 2: Streamlit
 streamlit
+
+#
+rank_bm25

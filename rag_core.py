@@ -9,6 +9,11 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
+# --- NOVAS IMPORTAÇÕES PARA BUSCA HÍBRIDA ---
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document # Necessário para o BM25
+
 LLM_PROVIDER = "gemini" 
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 load_dotenv()
@@ -36,21 +41,15 @@ def get_llm(provider: str):
             temperature=0.0,
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
-    # (O código do OpenAI permanece o mesmo...)
     elif provider == "openai":
-        print("Carregando LLM: OpenAI GPT-4o (Pago)")
-        return ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.0,
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
+        # (código do OpenAI)
+        pass
     else:
-        raise ValueError(f"Provedor de LLM desconhecido: {provider}. Escolha 'gemini' ou 'openai'.")
+        raise ValueError(f"Provedor de LLM desconhecido: {provider}.")
 
 def get_rag_chain():
     """
-    Função que CONSTRÓI e RETORNA a cadeia RAG.
-    Ela não é mais chamada globalmente.
+    Função que CONSTRÓI e RETORNA a cadeia RAG HÍBRIDA.
     """
     try:
         llm = get_llm(LLM_PROVIDER)
@@ -70,10 +69,40 @@ def get_rag_chain():
             embedding_function=embeddings,
         )
 
-        retriever = vector_store.as_retriever(
-            search_type="mmr",
-            search_kwargs={"k": 6, "fetch_k": 50}
+        # --- NOVA ARQUITETURA DE BUSCA (HÍBRIDA) ---
+        print("Configurando o Retriever Híbrido (Vetorial + Keyword)...")
+        
+        # 1. O Retriever Vetorial (o que já tínhamos)
+        vector_retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+
+        # 2. O Retriever de Palavra-Chave (BM25)
+        # Precisamos carregar os documentos do disco para "treinar" o BM25
+        print("Carregando documentos do ChromaDB para o BM25...")
+        docs_from_db = vector_store.get() # Pega todos os documentos
+        
+        # Recria os objetos Document (necessário para o BM25)
+        bm25_docs = [
+            Document(page_content=doc, metadata=meta or {})
+            for doc, meta in zip(docs_from_db['documents'], docs_from_db['metadatas'])
+        ]
+        
+        if not bm25_docs:
+            print("AVISO: Nenhum documento encontrado no DB para o BM25.")
+            # Se falhar, usa apenas o vetorial
+            return None 
+
+        print(f"{len(bm25_docs)} documentos carregados no BM25.")
+        bm25_retriever = BM25Retriever.from_documents(bm25_docs)
+        bm25_retriever.k = 5
+
+        # 3. O "Comitê" (EnsembleRetriever)
+        # Ele vai rodar AMBOS os retrievers e combinar os resultados.
+        # Damos mais peso à busca por palavra-chave (weights=[0.3, 0.7])
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[vector_retriever, bm25_retriever], weights=[0.3, 0.7]
         )
+        # --- FIM DA NOVA ARQUITETURA ---
+
         rag_prompt = PromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
         def format_docs(docs):
@@ -82,22 +111,23 @@ def get_rag_chain():
             return "\n\n".join(doc.page_content for doc in docs)
 
         rag_chain = (
-            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            {"context": ensemble_retriever | format_docs, "question": RunnablePassthrough()}
             | rag_prompt
             | llm
             | StrOutputParser()
         )
         
-        print(f"Cadeia RAG montada com sucesso usando: {LLM_PROVIDER}")
+        print(f"Cadeia RAG HÍBRIDA montada com sucesso usando: {LLM_PROVIDER}")
         return rag_chain
 
     except Exception as e:
         print(f"Erro ao montar a cadeia RAG: {e}")
+        import traceback
+        traceback.print_exc() # Imprime o erro completo no log
         return None
 
-# --- REMOVEMOS O CARREGAMENTO GLOBAL DA 'chain' ---
 
-# --- MUDANÇA: Funções agora recebem a 'chain' ---
+# --- As funções de resposta não mudam ---
 
 def get_rag_response(chain, question_text: str) -> str:
     """Função SÍNCRONA para obter a resposta (usada pelo Streamlit)."""

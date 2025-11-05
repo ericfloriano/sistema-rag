@@ -1,53 +1,38 @@
 import streamlit as st
 import time
 import os
-import sys
-from rag_core import get_rag_response, MODEL_NAME_FOR_DISPLAY 
+from rag_core import get_rag_response, MODEL_NAME_FOR_DISPLAY
+from ingest import run_ingestion  # <-- NOSSA NOVA IMPORTAÇÃO
 
-# --- NOVO: LÓGICA DE INICIALIZAÇÃO ---
-# Define o caminho para o banco de dados
 PERSIST_DIRECTORY = "chroma_db"
 
 @st.cache_resource # Isso garante que só rode UMA VEZ
 def initialize_database():
     """
     Verifica se o banco de dados existe na nuvem. 
-    Se não, executa o ingest.py para criá-lo.
+    Se não, executa a função run_ingestion() para criá-lo.
     """
     if not os.path.exists(PERSIST_DIRECTORY):
-        # Escreve uma mensagem para o usuário no app
         st.info("Primeira inicialização: Criando a base de conhecimento...")
-        st.warning("Isso pode demorar 1-2 minutos. O app carregará em seguida.")
         
-        # Encontra o executável do python (importante para o Streamlit Cloud)
-        python_executable = sys.executable
+        # Usa st.spinner para mostrar progresso
+        with st.spinner("Lendo documentos e criando o banco de vetores..."):
+            # Chama a função diretamente
+            success, message = run_ingestion() 
         
-        try:
-            # Roda o script ingest.py
-            # Usamos 'st.spinner' para mostrar que algo está acontecendo
-            with st.spinner(f"Executando `python ingest.py`... Lendo documentos..."):
-                result = os.system(f"{python_executable} ingest.py")
-            
-            if result == 0:
-                st.success("Base de conhecimento criada! O assistente está pronto.")
-                time.sleep(2) # Pausa para o usuário ler
-                st.rerun() # Recarrega a página agora que o DB existe
-            else:
-                st.error("Ocorreu um erro crítico ao criar a base de conhecimento.")
-                st.stop() # Para o app
-        except Exception as e:
-            st.error(f"Erro ao executar a ingestão: {e}")
-            st.stop()
+        if success:
+            st.success(f"Base de conhecimento criada! {message}")
+            time.sleep(2)
+            st.rerun() # Recarrega a página agora que o DB existe
+        else:
+            # SE FALHAR, VAI MOSTRAR O ERRO NA TELA!
+            st.error(f"Falha ao criar a base de conhecimento: {message}")
+            st.stop() # Para o app
     else:
-        # Isso só será impresso nos logs do servidor, não no app
         print("Banco de dados já existe. Carregando...")
 
-# --- FIM DA NOVA LÓGICA ---
-
 # --- Executa a inicialização ---
-# Isso rodará antes de qualquer outra coisa
 initialize_database()
-
 
 # --- O RESTANTE DO SEU CÓDIGO (sem mudanças) ---
 st.title("🧠 Assistente de Conhecimento Interno")
@@ -58,6 +43,7 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Olá! Como posso ajudar você hoje?"}
     ]
 
+# (O resto do seu código de chat permanece o mesmo...)
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])

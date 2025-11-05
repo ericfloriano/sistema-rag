@@ -1,6 +1,6 @@
 version: 1
 
-# Define o Disco Persistente (Sua estrutura está perfeita)
+# Define o Disco Persistente
 disks:
   - name: chroma-storage
     mountPath: /var/data/chroma_db
@@ -10,35 +10,34 @@ services:
   # Serviço 1: O Aplicativo Web Streamlit
   - type: web
     name: assistente-web
-    env: python
-    plan: free # (Sua ótima adição)
-    region: oregon # (Sua ótima adição)
+    runtime: python # <-- CORREÇÃO: 'env: python' não existe, use 'runtime'
+    plan: free
+    region: oregon
     branch: main
-    pythonVersion: "3.11"  # <-- CORREÇÃO 1: Deve ser uma string
-    buildCommand: "pip install -r requirements.txt"
-    # (Seu startCommand mais robusto - perfeito!)
-    startCommand: "streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0"
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0
     envVars:
-      - key: PORT # Garante que o Render saiba qual porta expor
+      - key: PORT
         value: 10000
     envVarGroups:
-      - name: api_key_rag # <-- CORREÇÃO 2: Apenas referenciamos o grupo da UI
-    disk: # <-- CORREÇÃO 3: 'disk' (singular) e apenas anexa, não redefine
+      - api_key_rag # <-- CORREÇÃO: Referência direta, sem 'name:'
+    disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db
+    autoDeploy: true
 
   # Serviço 2: O Bot do Telegram
   - type: worker
     name: assistente-telegram
-    env: python
-    plan: free # (Sua ótima adição)
-    region: oregon # (Sua ótima adição)
+    runtime: python # <-- CORREÇÃO: 'env: python' não existe, use 'runtime'
+    plan: free
+    region: oregon
     branch: main
-    pythonVersion: "3.11"  # <-- CORREÇÃO 1: Deve ser uma string
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python telegram_bot.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python telegram_bot.py
     envVarGroups:
-      - name: api_key_rag # <-- CORREÇÃO 2: Apenas referenciamos o grupo da UI
-    disk: # <-- CORREÇÃO 3: 'disk' (singular) e apenas anexa
+      - api_key_rag # <-- CORREÇÃO: Referência direta, sem 'name:'
+    disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db
+    autoDeploy: true

@@ -1,51 +1,44 @@
 version: 1
 
-# Define o disco persistente (para armazenar dados entre deploys)
+# Define o Disco Persistente (Sua estrutura está perfeita)
 disks:
   - name: chroma-storage
     mountPath: /var/data/chroma_db
     sizeGB: 1
 
-envVarGroups:
-  # Grupo de variáveis de ambiente compartilhadas entre os serviços
-  - name: api_key_rag
-    envVars:
-      - key: TELEGRAM_BOT_TOKEN
-        value: "seu_token_telegram_aqui"
-      - key: OPENAI_API_KEY
-        value: "sua_chave_openai_aqui"
-      - key: GEMINI_API_KEY
-        value: "sua_chave_gemini_aqui"
-
 services:
-  # Serviço 1: Aplicativo Web (Streamlit)
+  # Serviço 1: O Aplicativo Web Streamlit
   - type: web
     name: assistente-web
     env: python
-    plan: free
-    region: oregon
+    plan: free # (Sua ótima adição)
+    region: oregon # (Sua ótima adição)
     branch: main
-    pythonVersion: 3.11
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run streamlit_app.py --server.port=$PORT --server.address=0.0.0.0
+    pythonVersion: "3.11"  # <-- CORREÇÃO 1: Deve ser uma string
+    buildCommand: "pip install -r requirements.txt"
+    # (Seu startCommand mais robusto - perfeito!)
+    startCommand: "streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0"
+    envVars:
+      - key: PORT # Garante que o Render saiba qual porta expor
+        value: 10000
     envVarGroups:
-      - api_key_rag
-    disks:
-      - name: chroma-storage
-        mountPath: /var/data/chroma_db
+      - name: api_key_rag # <-- CORREÇÃO 2: Apenas referenciamos o grupo da UI
+    disk: # <-- CORREÇÃO 3: 'disk' (singular) e apenas anexa, não redefine
+      name: chroma-storage
+      mountPath: /var/data/chroma_db
 
-  # Serviço 2: Bot do Telegram
+  # Serviço 2: O Bot do Telegram
   - type: worker
     name: assistente-telegram
     env: python
-    plan: free
-    region: oregon
+    plan: free # (Sua ótima adição)
+    region: oregon # (Sua ótima adição)
     branch: main
-    pythonVersion: 3.11
-    buildCommand: pip install -r requirements.txt
-    startCommand: python telegram_bot.py
+    pythonVersion: "3.11"  # <-- CORREÇÃO 1: Deve ser uma string
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python telegram_bot.py"
     envVarGroups:
-      - api_key_rag
-    disks:
-      - name: chroma-storage
-        mountPath: /var/data/chroma_db
+      - name: api_key_rag # <-- CORREÇÃO 2: Apenas referenciamos o grupo da UI
+    disk: # <-- CORREÇÃO 3: 'disk' (singular) e apenas anexa
+      name: chroma-storage
+      mountPath: /var/data/chroma_db

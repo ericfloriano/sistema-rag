@@ -2,34 +2,37 @@ import streamlit as st
 import time
 import os
 from rag_core import get_rag_response, MODEL_NAME_FOR_DISPLAY
-from ingest import run_ingestion  # Importa nossa função de ingestão
+from ingest import run_ingestion, PERSIST_DIRECTORY
 
-PERSIST_DIRECTORY = "/var/data/chroma_db"
+# --- LÓGICA DE INICIALIZAÇÃO CORRIGIDA ---
+SUCCESS_FLAG_FILE = os.path.join(PERSIST_DIRECTORY, "ingest_success.flag")
 
 @st.cache_resource # Isso garante que só rode UMA VEZ
 def initialize_database():
     """
-    Verifica se o banco de dados existe na nuvem. 
-    Se não, executa a função run_ingestion() para criá-lo.
+    Verifica se a ingestão já foi concluída com sucesso. 
+    Se não, executa a função run_ingestion() para criá-la.
     """
-    if not os.path.exists(PERSIST_DIRECTORY):
+    # Procura pelo "arquivo de sucesso" em vez da pasta
+    if not os.path.exists(SUCCESS_FLAG_FILE):
         st.info("Primeira inicialização: Criando a base de conhecimento...")
         
-        with st.spinner("Lendo documentos e criando o banco de vetores... (Isso pode levar 1-2 minutos)"):
-            # Chama a função diretamente
+        with st.spinner("Lendo documentos e criando o banco de vetores... (Isso pode levar alguns minutos)"):
             success, message = run_ingestion() 
         
         if success:
             st.success(f"Base de conhecimento criada! {message}")
             time.sleep(2)
-            # st.rerun() # REMOVIDO! Esta linha estava causando o loop infinito.
+            # st.rerun() # REMOVIDO!
         else:
             st.error(f"Falha ao criar a base de conhecimento: {message}")
+            # Limpa o cache e para, para que ele tente de novo na próxima recarga
+            st.cache_resource.clear() 
             st.stop()
     else:
-        print("Banco de dados já existe. Carregando...")
+        print("Banco de dados já existe e está pronto. Carregando...")
+# --- FIM DA LÓGICA ---
 
-# --- Executa a inicialização ---
 initialize_database()
 
 # --- O RESTANTE DO SEU CÓDIGO (sem mudanças) ---

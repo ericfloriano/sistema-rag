@@ -1,6 +1,6 @@
 version: 1
 
-# Define o Disco Persistente (DEVE vir ANTES dos serviços)
+# Define o Disco Persistente (exatamente como você sugeriu)
 disks:
   - name: chroma-storage
     sizeGB: 1
@@ -10,42 +10,32 @@ services:
   # Serviço 1: O Aplicativo Web Streamlit
   - type: web
     name: assistente-web
-    env: python
-    runtime: python
-    plan: free
-    region: oregon
+    env: python # Define o ambiente
+    pythonVersion: "3.11" # <-- A CORREÇÃO MAIS IMPORTANTE
+    plan: free # (Sua ótima adição)
+    region: oregon # (Sua ótima adição)
     branch: main
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0
-    envVars:
-      - key: PORT
-        value: 10000
-      - key: STREAMLIT_SERVER_PORT
-        value: 10000
-      - key: STREAMLIT_SERVER_ADDRESS
-        value: 0.0.0.0
+    buildCommand: "pip install -r requirements.txt"
+    # (Seu startCommand mais robusto - perfeito!)
+    startCommand: "streamlit run streamlit_app.py --server.port=10000 --server.address=0.0.0.0"
     envVarGroups:
-      - name: chaves-rag
-    disk:
+      - name: api_key_rag # (Usei o nome do seu grupo da imagem)
+    disk: # <-- CORREÇÃO: Esta é a forma de ANEXAR um disco
       name: chroma-storage
       mountPath: /var/data/chroma_db
-      sizeGB: 1
-    autoDeploy: true
 
   # Serviço 2: O Bot do Telegram
   - type: worker
     name: assistente-telegram
-    env: python
-    runtime: python
-    plan: free
-    region: oregon
+    env: python # Define o ambiente
+    pythonVersion: "3.11" # <-- A CORREÇÃO MAIS IMPORTANTE
+    plan: free # (Sua ótima adição)
+    region: oregon # (Sua ótima adição)
     branch: main
-    buildCommand: pip install -r requirements.txt
-    startCommand: python telegram_bot.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python telegram_bot.py"
     envVarGroups:
-      - name: chaves-rag
-    disk:
+      - name: api_key_rag # (Usei o nome do seu grupo da imagem)
+    disk: # <-- CORREÇÃO: Anexando o MESMO disco
       name: chroma-storage
       mountPath: /var/data/chroma_db
-      sizeGB: 1
-    autoDeploy: true

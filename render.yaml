@@ -13,7 +13,6 @@ services:
     envVars:
       - key: PORT
         value: 10000
-      - fromGroup: api_key_rag # <-- CORREÇÃO: use 'fromGroup' em vez de 'envVarGroups'
     disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db
@@ -29,8 +28,6 @@ services:
     branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python telegram_bot.py
-    envVars:
-      - fromGroup: api_key_rag # <-- CORREÇÃO: use 'fromGroup' em vez de 'envVarGroups'
     disk:
       name: chroma-storage
       mountPath: /var/data/chroma_db

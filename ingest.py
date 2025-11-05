@@ -1,15 +1,19 @@
 import os
+import glob
 from dotenv import load_dotenv
-from langchain_community.document_loaders import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-# --- MUDANÇA AQUI ---
-from langchain_google_genai import GoogleGenerativeAIEmbeddings # Importa o modelo do Google
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-# Carrega as chaves (necessário para o Google API Key)
+# --- NOVAS IMPORTAÇÕES DE LOADERS LEVES ---
+from langchain_community.document_loaders import (
+    PyPDFLoader,      # Para PDFs
+    Docx2txtLoader,   # Para .docx
+    TextLoader        # Para .txt
+)
+
 load_dotenv()
 
-# Caminho para os documentos e para o banco de vetores (agora no disco persistente)
 SOURCE_DIRECTORY = "documentos_fonte"
 PERSIST_DIRECTORY = "/var/data/chroma_db" # Caminho do Render
 
@@ -26,38 +30,40 @@ def run_ingestion():
             print(msg)
             return False, msg
 
-        if not os.listdir(SOURCE_DIRECTORY):
-            msg = f"ERRO: Pasta fonte '{SOURCE_DIRECTORY}' está vazia."
-            print(msg)
-            return False, msg
+        # --- LÓGICA DE CARREGAMENTO MANUAL ---
+        print("Procurando por arquivos em documentos_fonte/...")
+        # Encontra todos os arquivos .pdf, .docx, .txt
+        filepaths = glob.glob(os.path.join(SOURCE_DIRECTORY, "**/*"), recursive=True)
         
-        print(f"Arquivos encontrados na fonte: {os.listdir(SOURCE_DIRECTORY)}")
+        all_documents = []
+        for filepath in filepaths:
+            print(f"Processando arquivo: {filepath}")
+            if filepath.lower().endswith(".pdf"):
+                loader = PyPDFLoader(filepath)
+            elif filepath.lower().endswith(".docx"):
+                loader = Docx2txtLoader(filepath)
+            elif filepath.lower().endswith(".txt"):
+                loader = TextLoader(filepath, encoding="utf-8")
+            else:
+                print(f"Aviso: Pulando arquivo não suportado: {filepath}")
+                continue
+            
+            # Adiciona os documentos carregados à lista
+            all_documents.extend(loader.load())
+        # --- FIM DA LÓGICA DE CARREGAMENTO ---
 
-        loader = DirectoryLoader(
-            SOURCE_DIRECTORY,
-            glob="**/*",
-            recursive=True,
-            show_progress=True,
-            use_multithreading=True,
-        )
-
-        print("Carregando documentos...")
-        documentos = loader.load()
-
-        if not documentos:
-            msg = "ERRO: O Loader não conseguiu carregar nenhum documento (verifique os tipos de arquivo)."
+        if not all_documents:
+            msg = "ERRO: Nenhum documento válido (.pdf, .docx, .txt) foi carregado."
             print(msg)
             return False, msg
 
-        print(f"Sucesso: {len(documentos)} documentos carregados.")
+        print(f"Sucesso: {len(all_documents)} documentos carregados.")
         
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = text_splitter.split_documents(documentos)
+        chunks = text_splitter.split_documents(all_documents)
         print(f"Sucesso: {len(chunks)} chunks criados.")
 
-        # --- MUDANÇA PRINCIPAL AQUI ---
         print("Carregando modelo de embeddings (Google API)...")
-        # Verifica se a chave foi carregada
         if not os.getenv("GOOGLE_API_KEY"):
             msg = "ERRO: GOOGLE_API_KEY não encontrada. Verifique as variáveis de ambiente."
             print(msg)
@@ -67,7 +73,6 @@ def run_ingestion():
             model="models/embedding-001",
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
-        # --- FIM DA MUDANÇA ---
 
         print(f"Criando e persistindo banco de vetores em '{PERSIST_DIRECTORY}'...")
         db = Chroma.from_documents(
@@ -76,7 +81,7 @@ def run_ingestion():
             persist_directory=PERSIST_DIRECTORY,
         )
         
-        msg = f"Sucesso! {len(documentos)} documentos ingeridos, {len(chunks)} chunks criados."
+        msg = f"Sucesso! {len(all_documents)} documentos ingeridos, {len(chunks)} chunks criados."
         print(msg)
         return True, msg
 
@@ -84,7 +89,7 @@ def run_ingestion():
         msg = f"ERRO INESPERADO no run_ingestion: {e}"
         print(msg)
         import traceback
-        traceback.print_exc() # Imprime o stack trace completo no log
+        traceback.print_exc()
         return False, msg
 
 if __name__ == "__main__":

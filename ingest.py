@@ -5,7 +5,7 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
 SOURCE_DIRECTORY = "documentos_fonte"
-PERSIST_DIRECTORY = "chroma_db"
+PERSIST_DIRECTORY = "/var/data/chroma_db"
 
 def run_ingestion():
     """

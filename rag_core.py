@@ -2,7 +2,7 @@ import os
 import warnings
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI  # <-- IMPORTADO
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 load_dotenv()
 
 # --- Configuração Global ---
-PERSIST_DIRECTORY = "chroma_db"
+PERSIST_DIRECTORY = "/var/data/chroma_db"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Template do Prompt (Guardrail)

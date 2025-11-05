@@ -70,7 +70,10 @@ def get_rag_chain():
             embedding_function=embeddings,
         )
 
-        retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+        retriever = vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={"k": 6, "fetch_k": 50}
+        )
         rag_prompt = PromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
         def format_docs(docs):

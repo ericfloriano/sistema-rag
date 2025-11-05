@@ -1,42 +1,39 @@
-# Define a versão do "Blueprint"
 version: 1
 
-# Define os seus segredos (API Keys)
-# Você DEVE ter um Environment Group no Render chamado 'chaves-rag'
-envVarGroups:
-  - name: api_key_rag # <-- O NOME DO SEU GRUPO DE AMBIENTE NO RENDER
-
-# Define seu Disco Persistente
-disks:
-  - name: chroma-storage # Nome do disco
-    sizeGB: 1 # Tamanho do disco
-    mountPath: /var/data/chroma_db # Onde o "cérebro" será salvo
-
-# Define seus dois aplicativos
 services:
   # Serviço 1: O Aplicativo Web Streamlit
   - type: web # Tipo: Web Service
     name: assistente-web # Nome do serviço
     env: python # FORÇA O AMBIENTE PYTHON
-    pythonVersion: "3.11" # <-- A CORREÇÃO MÁGICA
+    pythonVersion: "3.11" # <-- CORREÇÃO 1: "python" com "o"
     buildCommand: "pip install -r requirements.txt"
     startCommand: "streamlit run streamlit_app.py"
-    envVars: # Define uma variável de ambiente específica para o Streamlit
+    envVars:
       - key: STREAMLIT_SERVER_PORT
         value: 10000
+    envVarGroups:
+      - name: chaves-rag # <-- CORREÇÃO 2: Movido para dentro do serviço
     disks:
       - name: chroma-storage # Conecta o disco
         mountPath: /var/data/chroma_db # No caminho correto
-    autoDeploy: true # Atualiza automaticamente com 'git push'
+    autoDeploy: true
 
   # Serviço 2: O Bot do Telegram
   - type: worker # Tipo: Background Worker
     name: assistente-telegram # Nome do serviço
     env: python # FORÇA O AMBIENTE PYTHON
-    pythonVersion: "3.11" # <-- A CORREÇÃO MÁGICA
+    pythonVersion: "3.11" # <-- CORREÇÃO 1: "python" com "o"
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python telegram_bot.py"
+    envVarGroups:
+      - name: chaves-rag # <-- CORREÇÃO 2: Movido para dentro do serviço
     disks:
       - name: chroma-storage # Conecta o MESMO disco
         mountPath: /var/data/chroma_db # No MESMO caminho
-    autoDeploy: true # Atualiza automaticamente com 'git push'
+    autoDeploy: true
+
+# Define o Disco Persistente (no topo do arquivo)
+disks:
+  - name: chroma-storage # Nome do disco
+    sizeGB: 1 # Tamanho do disco
+    mountPath: /var/data/chroma_db # Onde o "cérebro" será salvo

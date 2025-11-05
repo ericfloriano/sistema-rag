@@ -2,9 +2,9 @@ import streamlit as st
 import time
 import os
 from rag_core import get_rag_response, MODEL_NAME_FOR_DISPLAY
-from ingest import run_ingestion  # <-- NOSSA NOVA IMPORTAÇÃO
+from ingest import run_ingestion  # Importa nossa função de ingestão
 
-PERSIST_DIRECTORY = "chroma_db"
+PERSIST_DIRECTORY = "/var/data/chroma_db"
 
 @st.cache_resource # Isso garante que só rode UMA VEZ
 def initialize_database():
@@ -15,19 +15,17 @@ def initialize_database():
     if not os.path.exists(PERSIST_DIRECTORY):
         st.info("Primeira inicialização: Criando a base de conhecimento...")
         
-        # Usa st.spinner para mostrar progresso
-        with st.spinner("Lendo documentos e criando o banco de vetores..."):
+        with st.spinner("Lendo documentos e criando o banco de vetores... (Isso pode levar 1-2 minutos)"):
             # Chama a função diretamente
             success, message = run_ingestion() 
         
         if success:
             st.success(f"Base de conhecimento criada! {message}")
             time.sleep(2)
-            # st.rerun() # Recarrega a página agora que o DB existe
+            # st.rerun() # REMOVIDO! Esta linha estava causando o loop infinito.
         else:
-            # SE FALHAR, VAI MOSTRAR O ERRO NA TELA!
             st.error(f"Falha ao criar a base de conhecimento: {message}")
-            st.stop() # Para o app
+            st.stop()
     else:
         print("Banco de dados já existe. Carregando...")
 
@@ -43,7 +41,6 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "Olá! Como posso ajudar você hoje?"}
     ]
 
-# (O resto do seu código de chat permanece o mesmo...)
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])

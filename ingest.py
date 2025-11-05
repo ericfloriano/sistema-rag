@@ -1,27 +1,21 @@
 import os
-import glob # Usado para encontrar os arquivos
+import glob
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-# --- NOVAS IMPORTAÇÕES DE LOADERS LEVES ---
 from langchain_community.document_loaders import (
-    PyPDFLoader,      # Para PDFs
-    Docx2txtLoader,   # Para .docx
-    TextLoader        # Para .txt
+    PyPDFLoader,
+    Docx2txtLoader,
+    TextLoader
 )
 
 load_dotenv()
 
 SOURCE_DIRECTORY = "documentos_fonte"
-PERSIST_DIRECTORY = "/var/data/chroma_db" # Caminho do Render
+PERSIST_DIRECTORY = "/var/data/chroma_db"
 
 def run_ingestion():
-    """
-    Executa o processo de ingestão de documentos.
-    Retorna (True, "mensagem de sucesso") ou (False, "mensagem de erro").
-    """
     try:
         print(f"Iniciando ingestão... Lendo de: {SOURCE_DIRECTORY}")
         
@@ -30,13 +24,10 @@ def run_ingestion():
             print(msg)
             return False, msg
 
-        # --- LÓGICA DE CARREGAMENTO MANUAL (LEVE) ---
         print("Procurando por arquivos em documentos_fonte/...")
-        # Encontra todos os arquivos .pdf, .docx, .txt
         filepaths = glob.glob(os.path.join(SOURCE_DIRECTORY, "**/*"), recursive=True)
         
         all_documents = []
-        # Loop manual pelos arquivos
         for filepath in filepaths:
             print(f"Processando arquivo: {filepath}")
             if filepath.lower().endswith(".pdf"):
@@ -49,9 +40,7 @@ def run_ingestion():
                 print(f"Aviso: Pulando arquivo não suportado: {filepath}")
                 continue
             
-            # Adiciona os documentos carregados à lista
             all_documents.extend(loader.load())
-        # --- FIM DA LÓGICA DE CARREGAMENTO ---
 
         if not all_documents:
             msg = "ERRO: Nenhum documento válido (.pdf, .docx, .txt) foi carregado."
@@ -76,11 +65,25 @@ def run_ingestion():
         )
 
         print(f"Criando e persistindo banco de vetores em '{PERSIST_DIRECTORY}'...")
-        db = Chroma.from_documents(
-            documents=chunks,
-            embedding=embeddings_model,
-            persist_directory=PERSIST_DIRECTORY,
+        
+        # --- MUDANÇA PRINCIPAL AQUI (CORREÇÃO DO BUG 500) ---
+        # 1. Crie um cliente Chroma vazio primeiro
+        db = Chroma(
+            embedding_function=embeddings_model,
+            persist_directory=PERSIST_DIRECTORY
         )
+        
+        # 2. Adicione os documentos em lotes para evitar o timeout da API
+        batch_size = 50
+        total_batches = (len(chunks) // batch_size) + 1
+        for i in range(0, len(chunks), batch_size):
+            batch_chunks = chunks[i:i + batch_size]
+            print(f"Processando lote {i//batch_size + 1} de {total_batches}...")
+            db.add_documents(documents=batch_chunks)
+        
+        print("Persistindo o banco de dados no disco...")
+        db.persist() # Salva o banco no disco persistente
+        # --- FIM DA MUDANÇA ---
         
         msg = f"Sucesso! {len(all_documents)} documentos ingeridos, {len(chunks)} chunks criados."
         print(msg)

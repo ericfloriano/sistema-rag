@@ -1,5 +1,5 @@
 import os
-import glob
+import glob # Usado para encontrar os arquivos
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -30,12 +30,13 @@ def run_ingestion():
             print(msg)
             return False, msg
 
-        # --- LÓGICA DE CARREGAMENTO MANUAL ---
+        # --- LÓGICA DE CARREGAMENTO MANUAL (LEVE) ---
         print("Procurando por arquivos em documentos_fonte/...")
         # Encontra todos os arquivos .pdf, .docx, .txt
         filepaths = glob.glob(os.path.join(SOURCE_DIRECTORY, "**/*"), recursive=True)
         
         all_documents = []
+        # Loop manual pelos arquivos
         for filepath in filepaths:
             print(f"Processando arquivo: {filepath}")
             if filepath.lower().endswith(".pdf"):

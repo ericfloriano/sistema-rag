@@ -4,7 +4,6 @@ langchain-google-genai
 langchain-openai
 langchain-community
 langchain-chroma
-# langchain-huggingface # Removido, não estamos usando
 
 # Banco de Vetores
 chromadb
@@ -13,9 +12,6 @@ chromadb
 pypdf       # Para PDFs
 python-docx # Dependência para o loader de docx
 docx2txt    # Para o Docx2txtLoader
-
-# REMOVIDO:
-# unstructured[pdf,docx] # ESTE ERA O PROBLEMA PESADO
 
 # Variáveis de Ambiente
 python-dotenv

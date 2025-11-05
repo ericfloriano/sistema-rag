@@ -3,8 +3,7 @@ import warnings
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-# --- MUDANÇA AQUI ---
-from langchain_google_genai import GoogleGenerativeAIEmbeddings # Importa o modelo do Google
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -14,7 +13,6 @@ LLM_PROVIDER = "gemini"
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 load_dotenv()
 
-# Caminho do disco persistente do Render
 PERSIST_DIRECTORY = "/var/data/chroma_db"
 
 RAG_PROMPT_TEMPLATE = """
@@ -34,10 +32,11 @@ def get_llm(provider: str):
     if provider == "gemini":
         print("Carregando LLM: Google Gemini 2.0 Flash (Gratuito)")
         return ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash", # Mantendo o seu modelo que funcionou
+            model="gemini-2.0-flash",
             temperature=0.0,
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
+    # (O código do OpenAI permanece o mesmo...)
     elif provider == "openai":
         print("Carregando LLM: OpenAI GPT-4o (Pago)")
         return ChatOpenAI(
@@ -49,10 +48,13 @@ def get_llm(provider: str):
         raise ValueError(f"Provedor de LLM desconhecido: {provider}. Escolha 'gemini' ou 'openai'.")
 
 def get_rag_chain():
+    """
+    Função que CONSTRÓI e RETORNA a cadeia RAG.
+    Ela não é mais chamada globalmente.
+    """
     try:
         llm = get_llm(LLM_PROVIDER)
 
-        # --- MUDANÇA PRINCIPAL AQUI ---
         print("Carregando modelo de embeddings (Google API)...")
         if not os.getenv("GOOGLE_API_KEY"):
              raise ValueError("GOOGLE_API_KEY não encontrada.")
@@ -61,8 +63,8 @@ def get_rag_chain():
             model="models/embedding-001",
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
-        # --- FIM DA MUDANÇA ---
 
+        print(f"Carregando banco de vetores de: {PERSIST_DIRECTORY}")
         vector_store = Chroma(
             persist_directory=PERSIST_DIRECTORY,
             embedding_function=embeddings,
@@ -90,18 +92,12 @@ def get_rag_chain():
         print(f"Erro ao montar a cadeia RAG: {e}")
         return None
 
-try:
-    chain = get_rag_chain()
-    MODEL_NAME_FOR_DISPLAY = (
-        chain.middle[1].model if chain else "Não carregado"
-    )
-except Exception as e:
-    print(f"Falha fatal ao inicializar o rag_core: {e}")
-    chain = None
-    MODEL_NAME_FOR_DISPLAY = "Erro ao carregar"
+# --- REMOVEMOS O CARREGAMENTO GLOBAL DA 'chain' ---
 
+# --- MUDANÇA: Funções agora recebem a 'chain' ---
 
-def get_rag_response(question_text: str) -> str:
+def get_rag_response(chain, question_text: str) -> str:
+    """Função SÍNCRONA para obter a resposta (usada pelo Streamlit)."""
     if chain is None:
         return "Erro: A cadeia RAG não foi inicializada corretamente."
     if not question_text:
@@ -110,12 +106,11 @@ def get_rag_response(question_text: str) -> str:
         response = chain.invoke(question_text)
         return response
     except Exception as e:
-        if "api key" in str(e).lower():
-             return f"Erro de API: Verifique se sua {LLM_PROVIDER.upper()}_API_KEY está correta no arquivo .env"
         print(f"Erro durante a invocação da cadeia: {e}")
         return f"Ocorreu um erro ao processar sua pergunta: {e}"
 
-async def get_rag_response_async(question_text: str) -> str:
+async def get_rag_response_async(chain, question_text: str) -> str:
+    """Função ASSÍNCRONA para obter a resposta (usada pelo Telegram)."""
     if chain is None:
         return "Erro: A cadeia RAG não foi inicializada corretamente."
     if not question_text:
@@ -126,13 +121,3 @@ async def get_rag_response_async(question_text: str) -> str:
     except Exception as e:
         print(f"Erro durante a invocação da cadeia (async): {e}")
         return f"Ocorreu um erro ao processar sua pergunta: {e}"
-
-if __name__ == "__main__":
-    print("Testando o rag_core.py...")
-    if chain:
-        pergunta_teste = "O que é o ReCARE?"
-        print(f"Pergunta: {pergunta_teste}")
-        resposta = get_rag_response(pergunta_teste)
-        print(f"Resposta: {resposta}")
-    else:
-        print("Não foi possível executar o teste, cadeia RAG falhou ao carregar.")

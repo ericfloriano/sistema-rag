@@ -4,14 +4,18 @@ langchain-google-genai
 langchain-openai
 langchain-community
 langchain-chroma
+langchain-retrievers
 
 # Banco de Vetores
 chromadb
 
 # Carregadores de Documentos LEVES
-pypdf       # Para PDFs
-python-docx # Dependência para o loader de docx
-docx2txt    # Para o Docx2txtLoader
+pypdf
+python-docx
+docx2txt
+
+# Dependências da Busca Híbrida
+rank_bm25
 
 # Variáveis de Ambiente
 python-dotenv
@@ -21,6 +25,3 @@ python-telegram-bot
 
 # Cenário 2: Streamlit
 streamlit
-
-#
-rank_bm25

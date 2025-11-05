@@ -12,7 +12,7 @@ chromadb
 # Carregadores de Documentos
 pypdf
 python-docx
-unstructured
+unstructured[pdf,docx]
 
 # Variáveis de Ambiente
 python-dotenv

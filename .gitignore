@@ -14,3 +14,6 @@ __pycache__/
 
 # Base de Conhecimento
 documentos_fonte/
+
+#BOT Telegram
+telegram_bot_.py

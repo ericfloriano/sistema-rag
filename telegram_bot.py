@@ -38,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.effective_user.first_name
     await update.message.reply_html(
         f"Olá, {user_name}! 👋\n\n"
-        "Eu sou seu assistente de processos internos. "
+        "Eu sou seu assistente."
         "Basta me enviar sua pergunta!"
     )
 

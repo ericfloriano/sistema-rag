@@ -37,9 +37,10 @@ except Exception as e:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.effective_user.first_name
     await update.message.reply_html(
-        f"Olá, {user_name}! 👋\n\n"
-        "Eu sou seu assistente."
-        "Basta me enviar sua pergunta!"
+        f"Oi, {user_name}! 👋\n\n"
+        "Eu sou seu assistente virtual 🤖\n"
+        "Pode me mandar suas dúvidas ou perguntas sobre o ReCARe que vou fazer o possível pra te ajudar!\n\n"
+        "<i>⚙️ Estou em constante evolução, então talvez algumas respostas ainda fujam do meu escopo. Obrigado pela compreensão! 💬</i>"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

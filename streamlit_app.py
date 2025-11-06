@@ -1,53 +1,37 @@
 import streamlit as st
 import time
 import os
-# --- MUDANÇA: Importações diferentes ---
 from rag_core import get_rag_response, get_rag_chain # Importa o CONSTRUTOR da chain
-from ingest import run_ingestion, PERSIST_DIRECTORY
 
-SUCCESS_FLAG_FILE = os.path.join(PERSIST_DIRECTORY, "ingest_success.flag")
-
-@st.cache_resource # Isso garante que só rode UMA VEZ
-def initialize_database():
-    """
-    Verifica se a ingestão já foi concluída com sucesso. 
-    Se não, executa a função run_ingestion() para criá-la.
-    """
-    if not os.path.exists(SUCCESS_FLAG_FILE):
-        st.info("Primeira inicialização: Criando a base de conhecimento...")
-        
-        with st.spinner("Lendo documentos e criando o banco de vetores... (Isso pode levar alguns minutos)"):
-            success, message = run_ingestion() 
-        
-        if success:
-            st.success(f"Base de conhecimento criada! {message}")
-            time.sleep(2)
-        else:
-            st.error(f"Falha ao criar a base de conhecimento: {message}")
-            st.cache_resource.clear() 
-            st.stop()
-    else:
-        print("Banco de dados já existe e está pronto. Carregando...")
-
-# --- Executa a inicialização PRIMEIRO ---
-initialize_database()
-
-# --- MUDANÇA: Carrega a 'chain' DEPOIS da inicialização ---
+# --- O 'CÉREBRO' É CARREGADO AQUI, UMA VEZ ---
 @st.cache_resource # Armazena o "cérebro" em cache
-def load_rag_chain():
-    """Carrega a cadeia RAG agora que o DB está pronto."""
+def load_rag_chain_cached():
+    """Carrega a cadeia RAG (que agora inclui o DB e o BM25 pré-carregados)."""
     print("Carregando a cadeia RAG para o Streamlit...")
-    return get_rag_chain()
+    chain = get_rag_chain()
+    if chain is None:
+        print("Falha ao carregar a cadeia RAG.")
+    return chain
 
-chain = load_rag_chain()
+# Carrega a cadeia na inicialização
+chain = load_rag_chain_cached()
+
+# --- Interface do Streamlit ---
+st.title("🧠 ReCARE FastLearn")
+st.subheader("🤖 Agent Assist")
+st.caption("⚙️ Este assistente está em constante evolução. Algumas respostas ainda podem estar fora do meu escopo de resposta.")
 
 if chain is None:
-    st.error("Falha ao carregar a cadeia RAG. Verifique os logs do servidor.")
+    st.error("Falha fatal ao carregar a cadeia RAG. Verifique os logs do servidor.")
     st.stop()
 
-# --- O RESTANTE DO SEU CÓDIGO ---
-st.title("🧠 Assistente de Conhecimento Interno")
-st.caption(f"Utilizando o modelo: {chain.middle[1].model}") # Pega o nome do modelo da 'chain' carregada
+# Pega o nome do modelo de dentro da 'chain'
+try:
+    llm_model_name = chain.middle[1].model
+except Exception:
+    llm_model_name = "gemini-2.0-flash" # Fallback
+
+# st.caption(f"Utilizando o modelo: {llm_model_name}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -67,10 +51,9 @@ if prompt := st.chat_input("Faça sua pergunta sobre processos ou produtos..."):
         message_placeholder = st.empty()
         message_placeholder.markdown("Buscando nos documentos... ⏳")
         try:
-            # --- MUDANÇA: Passa a 'chain' como argumento ---
             full_response = get_rag_response(chain, prompt)
             
-            # (O código de streaming permanece o mesmo...)
+            # Simulação de streaming
             response_chunks = full_response.split()
             streamed_response = ""
             if response_chunks:

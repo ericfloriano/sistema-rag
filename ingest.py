@@ -1,6 +1,7 @@
 import os
 import glob
 import time
+import pickle
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -10,11 +11,14 @@ from langchain_community.document_loaders import (
     Docx2txtLoader,
     TextLoader
 )
+from langchain_core.documents import Document
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
 
 load_dotenv()
 
 SOURCE_DIRECTORY = "documentos_fonte"
-PERSIST_DIRECTORY = "/var/data/chroma_db"
+PERSIST_DIRECTORY = "chroma_db"
 SUCCESS_FLAG_FILE = os.path.join(PERSIST_DIRECTORY, "ingest_success.flag")
 
 def run_ingestion():
@@ -55,7 +59,7 @@ def run_ingestion():
 
         print(f"Sucesso: {len(all_documents)} documentos carregados.")
         
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
         chunks = text_splitter.split_documents(all_documents)
         print(f"Sucesso: {len(chunks)} chunks criados.")
 
@@ -99,6 +103,23 @@ def run_ingestion():
         
         msg = f"Sucesso! {len(all_documents)} documentos ingeridos, {len(chunks)} chunks criados."
         print(msg)
+
+        # --- NOVO: Salvar o BM25 ---
+        print("Criando e salvando o índice BM25...")
+        bm25_docs = [
+            Document(page_content=doc.page_content, metadata=doc.metadata or {})
+            for doc in chunks
+        ]
+        bm25_retriever = BM25Retriever.from_documents(bm25_docs)
+        bm25_retriever.k = 5
+
+        # Salva o retriever em um arquivo
+        bm25_path = os.path.join(PERSIST_DIRECTORY, "bm25_retriever.pkl")
+        with open(bm25_path, "wb") as f:
+            pickle.dump(bm25_retriever, f)
+        print(f"Retriever BM25 salvo em: {bm25_path}")
+        # --- FIM DO NOVO BLOCO ---
+
         return True, msg
 
     except Exception as e:

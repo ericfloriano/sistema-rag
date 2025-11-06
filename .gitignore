@@ -10,4 +10,7 @@ __pycache__/
 *.pyc
 
 # Ignora o banco de dados local
-chroma_db/
+# chroma_db/
+
+# Base de Conhecimento
+documentos_fonte/

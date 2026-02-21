@@ -16,9 +16,6 @@ from langchain_core.documents import Document
 # --- QDRANT & RERANKER IMPORTS ---
 from langchain_qdrant import QdrantVectorStore, FastEmbedSparse
 from qdrant_client import QdrantClient
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
-from langchain_classic.retrievers import ContextualCompressionRetriever
 
 from config import (
     PERSIST_DIRECTORY,
@@ -115,6 +112,10 @@ def get_rag_chain():
     if USE_RERANKER:
         # 3. Reranker Pipeline (CrossEncoder)
         logger.info(f"Loading Local Reranker ({RERANKER_MODEL_NAME}). This might download weights on first use...")
+        from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+        from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+        from langchain_classic.retrievers import ContextualCompressionRetriever
+        
         cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL_NAME)
         
         compressor = CrossEncoderReranker(

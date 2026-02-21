@@ -1,8 +1,22 @@
 import os
 import logging
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 load_dotenv()
+
+# --- Dummy Web Server para o Render (Evita erro de 'No open ports' em Web Services) ---
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is healthy")
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), DummyHandler)
+    server.serve_forever()
 
 from telegram import Update
 from telegram.ext import (
@@ -92,6 +106,10 @@ async def main() -> None:
 
     try:
         logger.info("Inicializando o bot (async)...")
+        
+        # Iniciando o Dummy Server em uma thread separada para não bloquear o Asyncio do Telegram
+        threading.Thread(target=run_dummy_server, daemon=True).start()
+
         await application.initialize()
         
         logger.info("Iniciando o polling (async)...")

@@ -3,18 +3,23 @@ langchain
 langchain-google-genai
 langchain-openai
 langchain-community
-langchain-chroma
+langchain-qdrant
+langchain-huggingface
 
 # Banco de Vetores
-chromadb
+qdrant-client
+fastembed
 
 # Carregadores de Documentos LEVES
 pypdf
 python-docx
 docx2txt
 
-# Dependências da Busca Híbrida
-rank_bm25
+# Reranker / Embeddings Locais
+sentence-transformers
+
+# Controle de Taxa / Retentativas
+tenacity
 
 # Variáveis de Ambiente
 python-dotenv

@@ -1,59 +1,65 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 import time
-import os
-from rag_core import get_rag_response, get_rag_chain # Importa o CONSTRUTOR da chain
+import logging
+from rag_core import get_rag_response, get_rag_chain
+from config import GEMINI_MODEL_NAME
 
-# --- O 'CÉREBRO' É CARREGADO AQUI, UMA VEZ ---
-@st.cache_resource # Armazena o "cérebro" em cache
+# Setup logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# --- THE RAG BRAIN IS LOADED HERE ONCE ---
+@st.cache_resource # Caches the brain across sessions
 def load_rag_chain_cached():
-    """Carrega a cadeia RAG (que agora inclui o DB e o BM25 pré-carregados)."""
-    print("Carregando a cadeia RAG para o Streamlit...")
-    chain = get_rag_chain()
-    if chain is None:
-        print("Falha ao carregar a cadeia RAG.")
-    return chain
+    """Loads and caches the LLM RAG Chain."""
+    logger.info("Loading RAG chain for Streamlit UI...")
+    try:
+        chain = get_rag_chain()
+        return chain
+    except Exception as e:
+        logger.error(f"Failed to load RAG chain: {e}", exc_info=True)
+        return None
 
-# Carrega a cadeia na inicialização
+# Load chain on startup
 chain = load_rag_chain_cached()
 
-# --- Interface do Streamlit ---
+# --- Streamlit Front-End Interface ---
 st.title("🧠 ReCARE FastLearn")
 st.subheader("🤖 Agent Assist")
-st.caption("⚙️ Este assistente está em constante evolução. Algumas respostas ainda podem estar fora do meu escopo de resposta.")
+st.caption("⚙️ Este assistente de IA focado no equipamento ReCARE está em constante evolução. Respostas são geradas com base estrita nos manuais. Algumas questões podem estar fora do escopo coberto.")
 
 if chain is None:
-    st.error("Falha fatal ao carregar a cadeia RAG. Verifique os logs do servidor.")
+    st.error("Falha fatal ao carregar a Inteligência Artificial. A equipe técnica foi notificada do erro sistêmico. Verifique logs do servidor.")
     st.stop()
 
-# Pega o nome do modelo de dentro da 'chain'
-try:
-    llm_model_name = chain.middle[1].model
-except Exception:
-    llm_model_name = "gemini-2.0-flash" # Fallback
-
-# st.caption(f"Utilizando o modelo: {llm_model_name}")
+# Fallback to get LLM name
+llm_model_name = GEMINI_MODEL_NAME
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Olá! Como posso ajudar você hoje?"}
+        {"role": "assistant", "content": "Olá! Bem-vindo ao portal de conhecimento especializado do equipamento ReCARE. Como eu posso te ajudar na sua dúvida hoje?"}
     ]
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Faça sua pergunta sobre processos ou produtos..."):
+if prompt := st.chat_input("Ex: 'Quantos canais o equipamento possui?'..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        message_placeholder.markdown("Buscando nos documentos... ⏳")
+        message_placeholder.markdown("Buscando no banco de conhecimento oficial... ⏳")
         try:
             full_response = get_rag_response(chain, prompt)
             
-            # Simulação de streaming
+            # Simple streaming simulation for a smooth UX
             response_chunks = full_response.split()
             streamed_response = ""
             if response_chunks:
@@ -66,7 +72,8 @@ if prompt := st.chat_input("Faça sua pergunta sobre processos ou produtos..."):
                  message_placeholder.markdown(full_response)
         
         except Exception as e:
-            full_response = f"Ocorreu um erro: {e}"
+            logger.error(f"Request processing error in Streamlit: {e}", exc_info=True)
+            full_response = "Ocorreu um erro técnico na comunicação com o LLM. Por favor, tente novamente mais tarde."
             message_placeholder.markdown(full_response)
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})

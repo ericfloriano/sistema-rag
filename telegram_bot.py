@@ -2,6 +2,8 @@ import os
 import logging
 import asyncio
 from dotenv import load_dotenv
+load_dotenv()
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -10,10 +12,8 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-# --- MUDANÇA: Importações diferentes ---
 from rag_core import get_rag_response_async, get_rag_chain
 
-load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 logging.basicConfig(
@@ -21,27 +21,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- MUDANÇA: Carrega a 'chain' globalmente para o bot ---
-# Isso é seguro, pois o Streamlit já construiu o DB
-try:
-    logger.info("Carregando a cadeia RAG para o Telegram...")
-    chain = get_rag_chain()
-    if chain is None:
-        logger.error("Falha fatal ao carregar a cadeia RAG para o Telegram.")
-except Exception as e:
-    logger.error(f"Erro ao carregar 'chain' do Telegram: {e}")
-    chain = None
-
 # --- Funções do Bot ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.effective_user.first_name
-    await update.message.reply_html(
-        f"Oi, {user_name}! 👋\n\n"
-        "Eu sou seu assistente virtual 🤖\n"
-        "Pode me mandar suas dúvidas ou perguntas sobre o ReCARe que vou fazer o possível pra te ajudar!\n\n"
-        "<i>⚙️ Estou em constante evolução, então talvez algumas respostas ainda fujam do meu escopo. Obrigado pela compreensão! 💬</i>"
+    welcome_text = (
+        f"Olá, {user_name}! 👋 Seja muito bem-vindo(a)!\n\n"
+        "Eu sou o <b>Assistente Virtual de Inteligência Artificial focado no ReCARE</b> 🤖.\n\n"
+        "Estou aqui à sua inteira disposição para tirar todas as suas dúvidas sobre o equipamento ReCARE. "
+        "Você pode me perguntar sobre especificações, indicações de uso, dados do manual ou suporte técnico.\n\n"
+        "Basta digitar a sua pergunta abaixo! Exemplos:\n"
+        "👉 <i>'Para quais perfis de pacientes o ReCARE é indicado?'</i>\n"
+        "👉 <i>'Quantos canais o equipamento possui?'</i>\n\n"
+        "<i>⚙️ Nota: Sou uma IA em constante aprendizado. Minhas respostas são baseadas estritamente e unicamente nos documentos "
+        "oficiais da empresa para garantir máxima confiabilidade. Se eu não souber algo, te avisarei de forma honesta! 💬</i>"
     )
+    await update.message.reply_html(welcome_text)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -57,9 +52,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
-        # --- MUDANÇA: Passa a 'chain' como argumento ---
+        chain = context.bot_data.get("chain")
+        if chain is None:
+            await update.message.reply_text("Desculpe, meu cérebro está offline no momento. O suporte técnico já foi notificado!")
+            return
+            
         answer = await get_rag_response_async(chain, question)
-        
         await update.message.reply_text(answer)
         logger.info(f"Resposta enviada para o Chat ID {chat_id}: {answer[:50]}...")
 
@@ -69,17 +67,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "Desculpe, ocorreu um erro inesperado ao processar sua pergunta."
         )
 
-# --- A função main() assíncrona permanece a mesma ---
+# --- A função main() assíncrona ---
 async def main() -> None:
     if not TELEGRAM_TOKEN:
         logger.error("Token do Telegram não encontrado. Verifique seu arquivo .env")
         return
     
-    if chain is None:
-        logger.error("A cadeia RAG não foi carregada. O bot não pode iniciar.")
-        return
-
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    logger.info("Tentando carregar a cadeia RAG para o Telegram...")
+    try:
+        chain = get_rag_chain()
+        application.bot_data["chain"] = chain
+        logger.info("Cadeia RAG anexada ao bot com sucesso.")
+    except Exception as e:
+        logger.error(f"Falha fatal ao carregar a cadeia RAG. O bot será iniciado, mas as respostas podem falhar: {e}", exc_info=True)
+        application.bot_data["chain"] = None
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(

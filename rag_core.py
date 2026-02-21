@@ -1,160 +1,164 @@
 import os
-import warnings
-import pickle
 from dotenv import load_dotenv
+load_dotenv()
+
+import warnings
+import logging
 from typing import List
 
-# --- IMPORTAÇÕES PRINCIPAIS ---
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.documents import Document
 
-# --- IMPORTAÇÕES PARA NOSSA LÓGICA HÍBRIDA MANUAL ---
-from langchain_community.retrievers import BM25Retriever
-from langchain_core.runnables import RunnableLambda # <-- Chave para nossa solução
+# --- QDRANT & RERANKER IMPORTS ---
+from langchain_qdrant import QdrantVectorStore, FastEmbedSparse
+from qdrant_client import QdrantClient
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+from langchain_classic.retrievers import ContextualCompressionRetriever
 
-LLM_PROVIDER = "gemini" 
+from config import (
+    PERSIST_DIRECTORY,
+    COLLECTION_NAME,
+    EMBEDDINGS_MODEL_NAME,
+    GEMINI_MODEL_NAME,
+    GOOGLE_API_KEY,
+    LLM_PROVIDER,
+    RERANKER_MODEL_NAME,
+    VECTOR_SEARCH_K,
+    RERANKER_TOP_K,
+    QDRANT_URL,
+    QDRANT_API_KEY
+)
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
-load_dotenv()
-
-PERSIST_DIRECTORY = "chroma_db"
 
 RAG_PROMPT_TEMPLATE = """
-ATENÇÃO: Você é um assistente de IA focado em responder perguntas sobre processos internos e produtos da empresa.
-CONTEXTO:
+ATTENTION: You are an AI assistant focused on answering questions about the company's internal processes and products.
+CONTEXT:
 {context}
-PERGUNTA:
+QUESTION:
 {question}
-INSTRUÇÕES:
-1. Responda à PERGUNTA **estritamente** com base no CONTEXTO fornecido.
-2. Se o CONTEXTO não contiver a resposta, diga **exatamente**: "Desculpe, não tenho informações sobre isso no meu banco de dados."
-3. Não invente informações, não faça suposições e não use conhecimento externo.
-4. Responda em português brasileiro, de forma clara e objetiva.
+INSTRUCTIONS:
+1. Answer the QUESTION **strictly** based on the provided CONTEXT.
+2. If the CONTEXT does not contain the answer, say **exactly**: "Desculpe, não tenho informações sobre isso no meu banco de dados."
+3. Do not invent information, make assumptions, or use external knowledge.
+4. Answer in Brazilian Portuguese, clearly and objectively.
 """
 
 def get_llm(provider: str):
     if provider == "gemini":
-        print("Carregando LLM: Google Gemini 2.0 Flash (Gratuito)")
+        logger.info(f"Loading LLM: Google Gemini ({GEMINI_MODEL_NAME})")
         return ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL_NAME,
             temperature=0.0,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
+            google_api_key=GOOGLE_API_KEY
         )
-    # ... (outro código de LLM)
     else:
-        raise ValueError(f"Provedor de LLM desconhecido: {provider}.")
+        raise ValueError(f"Unknown LLM Provider: {provider}.")
 
 def get_rag_chain():
     """
-    Função que CONSTRÓI e RETORNA a cadeia RAG HÍBRIDA MANUAL.
+    Function that BUILDS and RETURNS the HYBRID RAG + RERANKER chain.
     """
-    try:
-        llm = get_llm(LLM_PROVIDER)
+    llm = get_llm(LLM_PROVIDER)
 
-        print("Carregando modelo de embeddings (Google API)...")
-        if not os.getenv("GOOGLE_API_KEY"):
-             raise ValueError("GOOGLE_API_KEY não encontrada.")
+    logger.info("Loading dense and sparse embedding models...")
+    if not GOOGLE_API_KEY:
+         raise ValueError("GOOGLE_API_KEY not found.")
 
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
+    # 1. Base Embeddings (Gemini Dense + FastEmbed Sparse)
+    dense_embeddings = GoogleGenerativeAIEmbeddings(
+        model=EMBEDDINGS_MODEL_NAME,
+        google_api_key=GOOGLE_API_KEY
+    )
+    sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
-        print(f"Carregando banco de vetores de: {PERSIST_DIRECTORY}")
-        vector_store = Chroma(
-            persist_directory=PERSIST_DIRECTORY,
-            embedding_function=embeddings,
-        )
-
-        # --- ARQUITETURA DE BUSCA HÍBRIDA (MANUAL) ---
-        print("Configurando o Retriever Híbrido (Vetorial + Keyword)...")
+    logger.info(f"Loading Qdrant Database: {PERSIST_DIRECTORY}")
+    
+    if QDRANT_URL and QDRANT_API_KEY:
+        logger.info("Connecting to Qdrant Cloud...")
+        qdrant_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    else:
+        logger.info("Connecting to Local Qdrant DB...")
+        if not PERSIST_DIRECTORY.exists():
+             raise FileNotFoundError(f"Qdrant database not found at {PERSIST_DIRECTORY}. Run ingest.py first.")
+        qdrant_client = QdrantClient(path=str(PERSIST_DIRECTORY))
+    
+    # Validates if the collection exists before loading
+    if not qdrant_client.collection_exists(COLLECTION_NAME):
+        raise ValueError(f"Collection '{COLLECTION_NAME}' does not exist in the Qdrant DB.")
         
-        # 1. O Retriever Vetorial (Carrega do ChromaDB)
-        vector_retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 7, "fetch_k": 20})
+    vector_store = QdrantVectorStore(
+        client=qdrant_client,
+        collection_name=COLLECTION_NAME,
+        embedding=dense_embeddings,
+        sparse_embedding=sparse_embeddings,
+        retrieval_mode="hybrid"
+    )
 
-        # 2. O Retriever de Palavra-Chave (Carrega do arquivo .pkl)
-        bm25_path = os.path.join(PERSIST_DIRECTORY, "bm25_retriever.pkl")
-        print(f"Carregando BM25 de: {bm25_path}")
-        
-        if not os.path.exists(bm25_path):
-            print(f"ERRO: Arquivo {bm25_path} não encontrado.")
-            return None
-            
-        with open(bm25_path, "rb") as f:
-            bm25_retriever = pickle.load(f)
-        bm25_retriever.k = 5
+    # 2. Base Retriever (Retrieves K documents via hybrid search: Dense + BM25)
+    logger.info("Setting up Base Retriever (Qdrant Hybrid)...")
+    base_retriever = vector_store.as_retriever(
+        search_kwargs={"k": VECTOR_SEARCH_K} # Fetch a large K (e.g. 20) for the Reranker to prune
+    )
 
-        # 3. NOSSA LÓGICA DE "ENSEMBLE" MANUAL
-        def hybrid_retrieve(query: str) -> List[Document]:
-            """
-            Combina os resultados do BM25 e da busca vetorial,
-            e remove documentos duplicados.
-            """
-            print(f"Buscando (Híbrido): {query}")
-            # --- CORREÇÃO: Usando .invoke() ---
-            bm25_docs = bm25_retriever.invoke(query)
-            vector_docs = vector_retriever.invoke(query)
-            # --- FIM DA CORREÇÃO ---
+    # 3. Reranker Pipeline (CrossEncoder)
+    logger.info(f"Loading Local Reranker ({RERANKER_MODEL_NAME}). This might download weights on first use...")
+    cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL_NAME)
+    
+    compressor = CrossEncoderReranker(
+        model=cross_encoder, 
+        top_n=RERANKER_TOP_K # From the original K, only pass the top N to the LLM
+    )
 
-            # Combina e deduplica
-            all_docs = {} # Usar um dict para deduplicação baseada no conteúdo
-            for doc in bm25_docs + vector_docs:
-                all_docs[doc.page_content] = doc
-            
-            return list(all_docs.values())
-        
-        # --- FIM DA NOVA ARQUITETURA ---
+    # 4. Final Hybrid Compressor (Combines Search + Re-Ordering from BGE)
+    compression_retriever = ContextualCompressionRetriever(
+        base_compressor=compressor, 
+        base_retriever=base_retriever
+    )
 
-        rag_prompt = PromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
+    rag_prompt = PromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
-        def format_docs(docs):
-            if not docs:
-                return "Nenhum contexto relevante encontrado."
-            return "\n\n".join(doc.page_content for doc in docs)
+    def format_docs(docs: List[Document]):
+        if not docs:
+            return "Nenhum contexto relevante encontrado."
+        return "\n\n".join(doc.page_content for doc in docs)
 
-        rag_chain = (
-            # Usamos RunnableLambda para inserir nossa função na cadeia
-            {"context": RunnableLambda(hybrid_retrieve) | format_docs, "question": RunnablePassthrough()}
-            | rag_prompt
-            | llm
-            | StrOutputParser()
-        )
-        
-        print(f"Cadeia RAG HÍBRIDA (Manual) montada com sucesso usando: {LLM_PROVIDER}")
-        return rag_chain
+    logger.info("Assembling Hybrid/Rerank LCEL Chain...")
+    rag_chain = (
+        {"context": compression_retriever | format_docs, "question": RunnablePassthrough()}
+        | rag_prompt
+        | llm
+        | StrOutputParser()
+    )
+    
+    logger.info(f"RAG Chain 'FIRST-CLASS' (Qdrant + BGE-Reranker) assembled successfully!")
+    return rag_chain
 
-    except Exception as e:
-        print(f"Erro ao montar a cadeia RAG: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-# --- Funções de resposta (sem alteração) ---
+# --- Response Functions ---
 
 def get_rag_response(chain, question_text: str) -> str:
     if chain is None:
-        return "Erro: A cadeia RAG não foi inicializada corretamente."
+        raise ValueError("The RAG chain was not initialized correctly.")
     if not question_text:
         return "Por favor, faça uma pergunta."
-    try:
-        response = chain.invoke(question_text)
-        return response
-    except Exception as e:
-        print(f"Erro durante a invocação da cadeia: {e}")
-        return f"Ocorreu um erro ao processar sua pergunta: {e}"
+    
+    response = chain.invoke(question_text)
+    return response
 
 async def get_rag_response_async(chain, question_text: str) -> str:
     if chain is None:
-        return "Erro: A cadeia RAG não foi inicializada corretamente."
+        raise ValueError("The RAG chain was not initialized correctly.")
     if not question_text:
         return "Por favor, faça uma pergunta."
-    try:
-        response = await chain.ainvoke(question_text)
-        return response
-    except Exception as e:
-        print(f"Erro durante a invocação da cadeia (async): {e}")
-        return f"Ocorreu um erro ao processar sua pergunta: {e}"
+    
+    response = await chain.ainvoke(question_text)
+    return response

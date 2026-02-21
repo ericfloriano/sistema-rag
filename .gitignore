@@ -1,16 +1,18 @@
-# Ambiente Virtual
+# Virtual Environments
 venv/
+.venv/
 __pycache__/
 
-# Segredos
+# Secrets and API Keys (CRITICAL SECURITY)
 .env
 
-# Arquivos de Sistema
+# System Files
 .DS_Store
 *.pyc
 
-# Ignora o banco de dados local
-# chroma_db/
+# Local Vector Databases
+qdrant_db/
+chroma_db/
 
-# Base de Conhecimento
+# Raw Knowledge Base (Optional: Ignore PDF files if they are proprietary)
 documentos_fonte/

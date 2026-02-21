@@ -1,10 +1,12 @@
 import os
-import glob
 import time
-import pickle
-from dotenv import load_dotenv
+import logging
+import uuid
+import shutil
+from pathlib import Path
+from tenacity import retry, wait_exponential, stop_after_attempt
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import (
     PyPDFLoader,
@@ -12,127 +14,158 @@ from langchain_community.document_loaders import (
     TextLoader
 )
 from langchain_core.documents import Document
-from langchain_community.retrievers import BM25Retriever
-from langchain_core.documents import Document
 
-load_dotenv()
+# --- QDRANT IMPORTS ---
+from langchain_qdrant import QdrantVectorStore, FastEmbedSparse
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, VectorParams
 
-SOURCE_DIRECTORY = "documentos_fonte"
-PERSIST_DIRECTORY = "chroma_db"
-SUCCESS_FLAG_FILE = os.path.join(PERSIST_DIRECTORY, "ingest_success.flag")
+from config import (
+    SOURCE_DIRECTORY,
+    PERSIST_DIRECTORY,
+    SUCCESS_FLAG_FILE,
+    COLLECTION_NAME,
+    EMBEDDINGS_MODEL_NAME,
+    GOOGLE_API_KEY,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    INGEST_BATCH_SIZE,
+    QDRANT_URL,
+    QDRANT_API_KEY
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+# Configure tenacity retry strategy to handle API ratelimits
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(5),
+    reraise=True
+)
+def add_documents_with_retry(db, batch_chunks):
+    """Adds documents with exponential backoff on failure."""
+    db.add_documents(documents=batch_chunks)
 
 def run_ingestion():
     """
-    Executa o processo de ingestão de documentos.
-    Retorna (True, "mensagem de sucesso") ou (False, "mensagem de erro").
+    Executes the document ingestion process into Qdrant Hybrid Cloud/Local.
+    Returns (True, "success message") or (False, "error message").
     """
     try:
-        print(f"Iniciando ingestão... Lendo de: {SOURCE_DIRECTORY}")
+        logger.info(f"Starting ingestion... Reading from: {SOURCE_DIRECTORY}")
         
-        if not os.path.exists(SOURCE_DIRECTORY):
-            msg = f"ERRO: Pasta fonte '{SOURCE_DIRECTORY}' não encontrada."
-            print(msg)
+        if not SOURCE_DIRECTORY.exists():
+            msg = f"ERROR: Source directory '{SOURCE_DIRECTORY}' not found."
+            logger.error(msg)
             return False, msg
 
-        print("Procurando por arquivos em documentos_fonte/...")
-        filepaths = glob.glob(os.path.join(SOURCE_DIRECTORY, "**/*"), recursive=True)
+        logger.info("Scanning for files in source directory...")
+        filepaths = list(SOURCE_DIRECTORY.rglob("*"))
         
         all_documents = []
         for filepath in filepaths:
-            if filepath.lower().endswith((".pdf", ".docx", ".txt")):
-                print(f"Processando arquivo: {filepath}")
-                if filepath.lower().endswith(".pdf"):
-                    loader = PyPDFLoader(filepath)
-                elif filepath.lower().endswith(".docx"):
-                    loader = Docx2txtLoader(filepath)
+            if filepath.is_file() and filepath.suffix.lower() in [".pdf", ".docx", ".txt"]:
+                logger.info(f"Processing file: {filepath}")
+                if filepath.suffix.lower() == ".pdf":
+                    loader = PyPDFLoader(str(filepath))
+                elif filepath.suffix.lower() == ".docx":
+                    loader = Docx2txtLoader(str(filepath))
                 else: # .txt
-                    loader = TextLoader(filepath, encoding="utf-8")
+                    loader = TextLoader(str(filepath), encoding="utf-8")
                 
                 all_documents.extend(loader.load())
-            else:
-                print(f"Aviso: Pulando arquivo não suportado: {filepath}")
+            elif filepath.is_file():
+                logger.warning(f"Warning: Skipping unsupported file format: {filepath}")
 
         if not all_documents:
-            msg = "ERRO: Nenhum documento válido (.pdf, .docx, .txt) foi carregado."
-            print(msg)
+            msg = "ERROR: No valid documents (.pdf, .docx, .txt) were loaded."
+            logger.error(msg)
             return False, msg
 
-        print(f"Sucesso: {len(all_documents)} documentos carregados.")
+        logger.info(f"Success: {len(all_documents)} raw document pages loaded.")
         
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
         chunks = text_splitter.split_documents(all_documents)
-        print(f"Sucesso: {len(chunks)} chunks criados.")
+        
+        # Inject unique chunk IDs for tracking
+        for chunk in chunks:
+            chunk.metadata["chunk_id"] = str(uuid.uuid4())
+            
+        logger.info(f"Success: {len(chunks)} contextual chunks generated.")
 
-        print("Carregando modelo de embeddings (Google API)...")
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            msg = "ERRO: GOOGLE_API_KEY não encontrada. Verifique as variáveis de ambiente."
-            print(msg)
+        logger.info("Loading dense embedding model (Google API) and sparse model (FastEmbed)...")
+        if not GOOGLE_API_KEY:
+            msg = "ERROR: GOOGLE_API_KEY not found. Please check your .env variables."
+            logger.error(msg)
             return False, msg
             
         embeddings_model = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
-            google_api_key=api_key
+            model=EMBEDDINGS_MODEL_NAME,
+            google_api_key=GOOGLE_API_KEY
         )
+        
+        # FastEmbed Sparse creates the "BM25-like" sparse vectors for native keyword search
+        sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
-        print(f"Criando e persistindo banco de vetores em '{PERSIST_DIRECTORY}'...")
+        logger.info(f"Connecting to Qdrant HYBRID DB at '{PERSIST_DIRECTORY}'...")
         
-        # --- MUDANÇA PRINCIPAL AQUI (CORREÇÃO DO BUG 500) ---
-        # 1. Crie um cliente Chroma vazio primeiro
-        db = Chroma(
-            embedding_function=embeddings_model,
-            persist_directory=PERSIST_DIRECTORY
-        )
+        # Remove old local DB directory to prevent schema conflicts if running locally
+        if PERSIST_DIRECTORY.exists():
+            logger.info("Cleaning up existing Qdrant collection to ensure a pristine slate...")
+            shutil.rmtree(PERSIST_DIRECTORY)
+
+        # 1. Instantiate a LangChain Qdrant Client (Hybrid setup via from_documents)
+        if QDRANT_URL and QDRANT_API_KEY:
+            logger.info("Connecting to Qdrant Cloud Cluster...")
+            db = QdrantVectorStore.from_documents(
+                [],
+                embedding=embeddings_model,
+                sparse_embedding=sparse_embeddings,
+                url=QDRANT_URL,
+                api_key=QDRANT_API_KEY,
+                collection_name=COLLECTION_NAME,
+                retrieval_mode="hybrid"
+            )
+        else:
+            logger.info(f"Connecting to Local Qdrant DB at '{PERSIST_DIRECTORY}'...")
+            db = QdrantVectorStore.from_documents(
+                [],
+                embedding=embeddings_model,
+                sparse_embedding=sparse_embeddings,
+                path=str(PERSIST_DIRECTORY),
+                collection_name=COLLECTION_NAME,
+                retrieval_mode="hybrid"
+            )
         
-        # 2. Adicione os documentos em lotes para evitar o timeout da API
-        batch_size = 50 # Envia 50 chunks de cada vez
-        total_batches = (len(chunks) // batch_size) + 1
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i:i + batch_size]
-            print(f"Processando lote {i//batch_size + 1} de {total_batches}...")
-            db.add_documents(documents=batch_chunks)
-            time.sleep(1) # Pausa de 1 segundo para não sobrecarregar a API
+        # 2. Add documents in chunks / batches to circumvent API ratelimits
+        total_batches = (len(chunks) // INGEST_BATCH_SIZE) + 1
+        for i in range(0, len(chunks), INGEST_BATCH_SIZE):
+            batch_chunks = chunks[i:i + INGEST_BATCH_SIZE]
+            logger.info(f"Processing batch {i//INGEST_BATCH_SIZE + 1} of {total_batches}...")
+            
+            add_documents_with_retry(db, batch_chunks)
+            time.sleep(1) # Extra slight pause to respect Google/Qdrant Cloud limits
         
-        print("Persistindo o banco de dados no disco...")
-        # db.persist()
-        
-        # 3. Crie o "arquivo de sucesso"
+        # 3. Create the "success flag" file
+        PERSIST_DIRECTORY.mkdir(parents=True, exist_ok=True)
         with open(SUCCESS_FLAG_FILE, "w") as f:
             f.write("ok")
-        # --- FIM DA MUDANÇA ---
         
-        msg = f"Sucesso! {len(all_documents)} documentos ingeridos, {len(chunks)} chunks criados."
-        print(msg)
-
-        # --- NOVO: Salvar o BM25 ---
-        print("Criando e salvando o índice BM25...")
-        bm25_docs = [
-            Document(page_content=doc.page_content, metadata=doc.metadata or {})
-            for doc in chunks
-        ]
-        bm25_retriever = BM25Retriever.from_documents(bm25_docs)
-        bm25_retriever.k = 5
-
-        # Salva o retriever em um arquivo
-        bm25_path = os.path.join(PERSIST_DIRECTORY, "bm25_retriever.pkl")
-        with open(bm25_path, "wb") as f:
-            pickle.dump(bm25_retriever, f)
-        print(f"Retriever BM25 salvo em: {bm25_path}")
-        # --- FIM DO NOVO BLOCO ---
+        msg = f"Success! {len(all_documents)} documents ingested via Hybrid Pipeline, {len(chunks)} chunks successfully pushed to Qdrant."
+        logger.info(msg)
 
         return True, msg
 
     except Exception as e:
-        msg = f"ERRO INESPERADO no run_ingestion: {e}"
-        print(msg)
-        import traceback
-        traceback.print_exc()
+        msg = f"UNEXPECTED ERROR in run_ingestion: {e}"
+        logger.error(msg, exc_info=True)
         return False, msg
 
 if __name__ == "__main__":
-    import time
     success, message = run_ingestion()
     if success:
-        print(f"✅ Ingestão concluída com sucesso! {message}")
+        logger.info(f"✅ Qdrant Ingestion completed successfully! {message}")
     else:
-        print(f"❌ Falha na ingestão: {message}")
+        logger.error(f"❌ Ingestion failed: {message}")

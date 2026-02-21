@@ -104,26 +104,32 @@ def get_rag_chain():
         retrieval_mode="hybrid"
     )
 
+    USE_RERANKER = os.getenv("USE_RERANKER", "true").lower() == "true"
+    
     # 2. Base Retriever (Retrieves K documents via hybrid search: Dense + BM25)
     logger.info("Setting up Base Retriever (Qdrant Hybrid)...")
     base_retriever = vector_store.as_retriever(
-        search_kwargs={"k": VECTOR_SEARCH_K} # Fetch a large K (e.g. 20) for the Reranker to prune
+        search_kwargs={"k": VECTOR_SEARCH_K if USE_RERANKER else 4} # Fetch a large K for the Reranker, or standard K if disabled
     )
 
-    # 3. Reranker Pipeline (CrossEncoder)
-    logger.info(f"Loading Local Reranker ({RERANKER_MODEL_NAME}). This might download weights on first use...")
-    cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL_NAME)
-    
-    compressor = CrossEncoderReranker(
-        model=cross_encoder, 
-        top_n=RERANKER_TOP_K # From the original K, only pass the top N to the LLM
-    )
+    if USE_RERANKER:
+        # 3. Reranker Pipeline (CrossEncoder)
+        logger.info(f"Loading Local Reranker ({RERANKER_MODEL_NAME}). This might download weights on first use...")
+        cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL_NAME)
+        
+        compressor = CrossEncoderReranker(
+            model=cross_encoder, 
+            top_n=RERANKER_TOP_K # From the original K, only pass the top N to the LLM
+        )
 
-    # 4. Final Hybrid Compressor (Combines Search + Re-Ordering from BGE)
-    compression_retriever = ContextualCompressionRetriever(
-        base_compressor=compressor, 
-        base_retriever=base_retriever
-    )
+        # 4. Final Hybrid Compressor (Combines Search + Re-Ordering from BGE)
+        final_retriever = ContextualCompressionRetriever(
+            base_compressor=compressor, 
+            base_retriever=base_retriever
+        )
+    else:
+        logger.info("Reranker is DISABLED via environment variables. Using standard Hybrid Search to save RAM.")
+        final_retriever = base_retriever
 
     rag_prompt = PromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
@@ -132,15 +138,15 @@ def get_rag_chain():
             return "Nenhum contexto relevante encontrado."
         return "\n\n".join(doc.page_content for doc in docs)
 
-    logger.info("Assembling Hybrid/Rerank LCEL Chain...")
+    logger.info("Assembling Hybrid LCEL Chain...")
     rag_chain = (
-        {"context": compression_retriever | format_docs, "question": RunnablePassthrough()}
+        {"context": final_retriever | format_docs, "question": RunnablePassthrough()}
         | rag_prompt
         | llm
         | StrOutputParser()
     )
     
-    logger.info(f"RAG Chain 'FIRST-CLASS' (Qdrant + BGE-Reranker) assembled successfully!")
+    logger.info(f"RAG Chain (Qdrant Hybrid={'Reranked' if USE_RERANKER else 'Base'}) assembled successfully!")
     return rag_chain
 
 # --- Response Functions ---

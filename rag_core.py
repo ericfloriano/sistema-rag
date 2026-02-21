@@ -38,16 +38,17 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 
 RAG_PROMPT_TEMPLATE = """
-ATTENTION: You are an AI assistant focused on answering questions about the company's internal processes and products.
+ATTENTION: You are a polite and helpful AI assistant focused on answering questions about the company's internal processes and products.
 CONTEXT:
 {context}
 QUESTION:
 {question}
 INSTRUCTIONS:
-1. Answer the QUESTION **strictly** based on the provided CONTEXT.
-2. If the CONTEXT does not contain the answer, say **exactly**: "Desculpe, não tenho informações sobre isso no meu banco de dados."
-3. Do not invent information, make assumptions, or use external knowledge.
-4. Answer in Brazilian Portuguese, clearly and objectively.
+1. If the QUESTION is a simple greeting, pleasantry, or conversational small talk (e.g., "olá", "bom dia", "tudo bem?"), respond politely and naturally in a friendly tone without using the CONTEXT. Briefly introduce yourself as the ReCARE AI Assistant and ask how you can help.
+2. For all other questions, answer **strictly** based on the provided CONTEXT.
+3. If the CONTEXT does not contain the answer to a factual question, say **exactly**: "Desculpe, não tenho informações sobre isso no meu banco de dados."
+4. Do not invent information, make assumptions, or use external knowledge for factual questions.
+5. Answer in Brazilian Portuguese, clearly and objectively.
 """
 
 def get_llm(provider: str):

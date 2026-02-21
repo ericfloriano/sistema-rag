@@ -54,6 +54,10 @@ LANGCHAIN_TRACING_V2=true
 LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 LANGCHAIN_API_KEY=your_langsmith_api_key_here
 LANGCHAIN_PROJECT=ReCARE-RAG
+
+# Reranker Toggle (Optional)
+# Set to 'false' if deploying to low-RAM free-tier servers (e.g. Render Free)
+USE_RERANKER=true
 ```
 > ⚠️ **Security Note:** Never commit your `.env` file to GitHub. It is already safely included in the `.gitignore`.
 

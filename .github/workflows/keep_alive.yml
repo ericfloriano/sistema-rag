@@ -1,0 +1,17 @@
+name: Keep Render App Awake (RPA Ping)
+
+on:
+  schedule:
+    # Executa a cada 10 minutos para garantir que a Render (que dorme com 15m) não hiberne
+    - cron: '*/10 * * * *'
+  # O workflow_dispatch permite que você clique e rode manualmente lá no site do GitHub se quiser testar
+  workflow_dispatch:
+
+jobs:
+  ping-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Realizar requisicao HTTP GET no Web Service
+        run: |
+          curl -s -X GET https://sistema-rag.onrender.com/ > /dev/null
+          echo "✅ Ping RPA enviado com sucesso para a Render!"
